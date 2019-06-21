@@ -9,16 +9,13 @@ import { Provider as Redux } from 'react-redux';
 import { BrowserRouter as Router } from 'react-router-dom';
 import i18next from 'libs/i18next';
 import store from 'store';
-import Themes from 'themes/themes';
 import { assignAccountIndexIfNecessary } from 'actions/accounts';
 import { mapStorageToState as mapStorageToStateAction } from 'actions/wallet';
-import { updateTheme } from 'actions/settings';
-import { mapStorageToState } from 'libs/storageToStateMappers';
 import { getEncryptionKey } from 'libs/realm';
 import { changeIotaNode, quorum } from 'libs/iota';
+import { initialise as initialiseStorage } from 'storage';
 import { bugsnagClient, ErrorBoundary } from 'libs/bugsnag';
-import { initialise as initialiseStorage, realm } from 'storage';
-import { updateSchema } from 'schemas';
+import updateSchema from 'libs/updateSchema';
 
 import Index from 'ui/Index';
 import Tray from 'ui/Tray';
@@ -26,6 +23,7 @@ import Tray from 'ui/Tray';
 import Alerts from 'ui/global/Alerts';
 import FatalError from 'ui/global/FatalError';
 
+import { decrypt } from './libs/crypto.js';
 import './ui/index.scss';
 
 const init = () => {
@@ -61,49 +59,37 @@ const init = () => {
         );
     } else {
         initialiseStorage(getEncryptionKey)
-            .then(() => {
-                const oldPersistedData = Electron.getAllStorage();
-                const hasDataToMigrate = !isEmpty(oldPersistedData);
+            .then(async (key) => {
+                const persistedData = Electron.getStorage('__STATE__');
 
-                if (hasDataToMigrate) {
-                    Object.assign(oldPersistedData.settings, {
-                        completedMigration: false,
-                    });
+                if (!persistedData) {
+                    return null;
                 }
 
-                // Get persisted data from Realm storage if no old persisted data present
-                const data = hasDataToMigrate ? updateSchema(oldPersistedData) : mapStorageToState();
+                const data = await decrypt(persistedData, key);
 
-                // Change provider on global iota instance
-                const node = get(data, 'settings.node');
-                changeIotaNode(assign({}, node, { provider: node.url }));
+                return JSON.parse(data);
+            })
+            .then((persistedData) => {
+                if (!isEmpty(persistedData)) {
+                    const data = updateSchema(persistedData);
 
-                // Set quorum size
-                quorum.setSize(get(data, 'settings.quorum.size'));
+                    // Change provider on global iota instance
+                    const node = get(data, 'settings.node');
+                    changeIotaNode(assign({}, node, { provider: node.url }));
 
-                // Update store with persisted state
-                store.dispatch(mapStorageToStateAction(data));
+                    // Set quorum size
+                    quorum.setSize(get(data, 'settings.quorum.size'));
 
-                // Assign accountIndex to every account in accountInfo if it is not assigned already
-                store.dispatch(assignAccountIndexIfNecessary(get(data, 'accounts.accountInfo')));
+                    // Update store with persisted state
+                    store.dispatch(mapStorageToStateAction(data));
 
-                // Proxy realm changes to Tray application
-                realm.addListener('change', () => {
-                    const data = mapStorageToState();
-                    Electron.storeUpdate(JSON.stringify(data));
-                });
+                    // Update language to initial setting
+                    i18next.changeLanguage(data.settings.locale);
 
-                // Set theme to default if current theme does not exist
-                if (get(Themes, store.getState().settings.themeName)) {
-                    store.dispatch(updateTheme('Default'));
+                    // Assign accountIndex to every account in accountInfo if it is not assigned already
+                    store.dispatch(assignAccountIndexIfNecessary(get(data, 'accounts.accountInfo')));
                 }
-
-                // Update language to initial setting
-                i18next.changeLanguage(data.settings.locale);
-
-                // Start Tray application if enabled in settings
-                const isTrayEnabled = get(data, 'settings.isTrayEnabled');
-                Electron.setTray(isTrayEnabled);
 
                 render(
                     <ErrorBoundary>

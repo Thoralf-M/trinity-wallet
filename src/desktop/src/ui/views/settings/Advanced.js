@@ -5,7 +5,7 @@ import { withTranslation, Trans } from 'react-i18next';
 import { connect } from 'react-redux';
 
 import { clearVault } from 'libs/crypto';
-import { getEncryptionKey, ALIAS_REALM } from 'libs/realm';
+import { ALIAS_REALM } from 'libs/realm';
 
 import {
     changePowSettings,
@@ -18,8 +18,6 @@ import {
 } from 'actions/settings';
 
 import { generateAlert } from 'actions/alerts';
-
-import { reinitialise as reinitialiseStorage } from 'storage';
 
 import Button from 'ui/components/Button';
 import Confirm from 'ui/components/modal/Confirm';
@@ -104,8 +102,6 @@ class Advanced extends PureComponent {
             await clearVault(ALIAS_REALM);
             localStorage.clear();
             Electron.clearStorage();
-
-            await reinitialiseStorage(getEncryptionKey);
 
             Electron.reload();
         } catch (_err) {

@@ -13,8 +13,8 @@ export const ALIAS_REALM = 'realm_enc_key';
  */
 export const getEncryptionKey = () => {
     return Electron.readKeychain(ALIAS_REALM).then((encryptionKey) => {
-        if (encryptionKey === null || encryptionKey.split(',').length !== 64) {
-            const key = Uint8Array.from(randomBytes(64));
+        if (encryptionKey === null || encryptionKey.split(',').length !== 16) {
+            const key = Uint8Array.from(randomBytes(16));
 
             return Electron.setKeychain(ALIAS_REALM, key.toString()).then(() => key);
         }
